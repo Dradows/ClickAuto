@@ -2,6 +2,7 @@
 bin/
 obj/
 publish/
+release/
 
 # Local .NET CLI state
 .dotnet-home/
