@@ -1,0 +1,22 @@
+# Build output
+bin/
+obj/
+publish/
+
+# Local .NET CLI state
+.dotnet-home/
+
+# User/editor files
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+
+# OS files
+Thumbs.db
+Desktop.ini
