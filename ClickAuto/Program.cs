@@ -15,13 +15,15 @@ internal static class Program
 
 public sealed class MainForm : Form
 {
-    private const int HotkeyId = 1;
+    private const int ToggleHotkeyId = 1;
+    private const int SingleClickHotkeyId = 2;
     private const int WmHotkey = 0x0312;
     private const int WmKeydown = 0x0100;
     private const int WmSyskeydown = 0x0104;
     private const int WhKeyboardLl = 13;
     private const uint ModAlt = 0x0001;
     private const uint VkW = 0x57;
+    private const uint VkE = 0x45;
     private const int VkMenu = 0x12;
 
     private readonly System.Windows.Forms.Timer clickTimer = new();
@@ -31,6 +33,7 @@ public sealed class MainForm : Form
     private readonly LowLevelKeyboardProc keyboardProc;
     private IntPtr keyboardHook;
     private DateTime lastToggleAt = DateTime.MinValue;
+    private DateTime lastSingleClickAt = DateTime.MinValue;
     private bool isRunning;
 
     public MainForm()
@@ -39,22 +42,22 @@ public sealed class MainForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedSingle;
         MaximizeBox = false;
-        ClientSize = new Size(360, 155);
+        ClientSize = new Size(420, 160);
         BackColor = Color.FromArgb(248, 249, 251);
 
         statusLabel.AutoSize = false;
         statusLabel.TextAlign = ContentAlignment.MiddleCenter;
         statusLabel.Font = new Font("Microsoft YaHei UI", 16F, FontStyle.Bold);
-        statusLabel.Bounds = new Rectangle(20, 18, 320, 42);
+        statusLabel.Bounds = new Rectangle(20, 18, 380, 42);
 
         hintLabel.AutoSize = false;
         hintLabel.TextAlign = ContentAlignment.MiddleCenter;
         hintLabel.Font = new Font("Microsoft YaHei UI", 9.5F);
         hintLabel.ForeColor = Color.FromArgb(84, 92, 105);
-        hintLabel.Bounds = new Rectangle(20, 62, 320, 28);
-        hintLabel.Text = "快捷键 Alt+W 暂停或开启，每 1 秒点击一次左键";
+        hintLabel.Bounds = new Rectangle(20, 62, 380, 34);
+        hintLabel.Text = "Alt+W 暂停或开启；Alt+E 单次左键点击";
 
-        toggleButton.Bounds = new Rectangle(105, 102, 150, 34);
+        toggleButton.Bounds = new Rectangle(135, 108, 150, 34);
         toggleButton.Font = new Font("Microsoft YaHei UI", 9.5F);
         toggleButton.Click += (_, _) => ToggleRunning();
 
@@ -74,9 +77,14 @@ public sealed class MainForm : Form
     {
         base.OnHandleCreated(e);
 
-        if (!RegisterHotKey(Handle, HotkeyId, ModAlt, VkW))
+        if (!RegisterHotKey(Handle, ToggleHotkeyId, ModAlt, VkW))
         {
             CornerNotification.Show("Alt+W 注册失败，可用窗口按钮切换。", false);
+        }
+
+        if (!RegisterHotKey(Handle, SingleClickHotkeyId, ModAlt, VkE))
+        {
+            CornerNotification.Show("Alt+E 注册失败。", false);
         }
 
         keyboardHook = SetKeyboardHook(keyboardProc);
@@ -94,16 +102,27 @@ public sealed class MainForm : Form
             keyboardHook = IntPtr.Zero;
         }
 
-        UnregisterHotKey(Handle, HotkeyId);
+        UnregisterHotKey(Handle, ToggleHotkeyId);
+        UnregisterHotKey(Handle, SingleClickHotkeyId);
         base.OnHandleDestroyed(e);
     }
 
     protected override void WndProc(ref Message message)
     {
-        if (message.Msg == WmHotkey && message.WParam.ToInt32() == HotkeyId)
+        if (message.Msg == WmHotkey)
         {
-            ToggleRunning();
-            return;
+            var hotkeyId = message.WParam.ToInt32();
+            if (hotkeyId == ToggleHotkeyId)
+            {
+                ToggleRunning();
+                return;
+            }
+
+            if (hotkeyId == SingleClickHotkeyId)
+            {
+                PerformSingleClick();
+                return;
+            }
         }
 
         base.WndProc(ref message);
@@ -123,6 +142,17 @@ public sealed class MainForm : Form
         CornerNotification.Show(isRunning ? "自动点击已开启" : "自动点击已暂停", isRunning);
     }
 
+    private void PerformSingleClick()
+    {
+        if ((DateTime.UtcNow - lastSingleClickAt).TotalMilliseconds < 250)
+        {
+            return;
+        }
+
+        lastSingleClickAt = DateTime.UtcNow;
+        ClickLeftMouseButton();
+    }
+
     private void UpdateStatus()
     {
         statusLabel.Text = isRunning ? "正在自动点击" : "已暂停";
@@ -137,9 +167,16 @@ public sealed class MainForm : Form
             var vkCode = Marshal.ReadInt32(lParam);
             var altPressed = (GetAsyncKeyState(VkMenu) & 0x8000) != 0;
 
-            if (vkCode == VkW && altPressed)
+            if (altPressed)
             {
-                BeginInvoke(ToggleRunning);
+                if (vkCode == VkW)
+                {
+                    BeginInvoke(ToggleRunning);
+                }
+                else if (vkCode == VkE)
+                {
+                    BeginInvoke(PerformSingleClick);
+                }
             }
         }
 
